@@ -4,14 +4,14 @@ Extension VS Code pour exécuter et inspecter du code assembleur MIPS avec le mo
 
 ## Installation
 
-Dans VS Code sur ordinateur, ouvrir la vue **Extensions**, rechercher **MIPS Runner** par **Jisko** et sélectionner **Install**.
-
 Pour installer une version téléchargée depuis GitHub :
 
 1. Télécharger le fichier `.vsix` de la version souhaitée depuis les [releases GitHub](https://github.com/JSchoreels/MIPS-Runner/releases).
 2. Dans VS Code sur ordinateur, ouvrir la vue **Extensions**, puis le menu **…** et sélectionner **Install from VSIX…**.
 3. Choisir le fichier téléchargé et recharger VS Code si nécessaire.
 4. Ouvrir un fichier MIPS et accepter la proposition de chargement, ou lancer **MIPS Runner: Load Active File** depuis la palette de commandes.
+
+Si l'extension est disponible sur le Marketplace, elle peut aussi être installée depuis la vue **Extensions** de VS Code en recherchant **MIPS Runner** par **Jisko**.
 
 Si une version de développement `local.mips-runner` est déjà installée, la désinstaller avant d'installer `Jisko.mips-runner` pour éviter que les deux extensions ne soient actives en même temps.
 
