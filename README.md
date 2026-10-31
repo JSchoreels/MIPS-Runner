@@ -4,10 +4,16 @@ Extension VS Code pour exécuter et inspecter du code assembleur MIPS avec le mo
 
 ## Installation
 
-1. Télécharger le fichier `.vsix` de la version souhaitée depuis les releases GitHub.
+Dans VS Code sur ordinateur, ouvrir la vue **Extensions**, rechercher **MIPS Runner** par **Jisko** et sélectionner **Install**.
+
+Pour installer une version téléchargée depuis GitHub :
+
+1. Télécharger le fichier `.vsix` de la version souhaitée depuis les [releases GitHub](https://github.com/JSchoreels/MIPS-Runner/releases).
 2. Dans VS Code sur ordinateur, ouvrir la vue **Extensions**, puis le menu **…** et sélectionner **Install from VSIX…**.
 3. Choisir le fichier téléchargé et recharger VS Code si nécessaire.
 4. Ouvrir un fichier MIPS et accepter la proposition de chargement, ou lancer **MIPS Runner: Load Active File** depuis la palette de commandes.
+
+Si une version de développement `local.mips-runner` est déjà installée, la désinstaller avant d'installer `Jisko.mips-runner` pour éviter que les deux extensions ne soient actives en même temps.
 
 ## Démarrer en développement
 
@@ -48,4 +54,4 @@ Quand un fichier MIPS devient actif, l’extension propose par défaut de le cha
 
 Le répertoire `vendor/spim` contient les fichiers WebAssembly et le code source SPIM provenant du dépôt local JsSpim, révision `64ddfacb70ccd5a63469d34a76eda109d5a820d2`. Les fichiers générés sont inclus afin que l'extension fonctionne sans compilation préalable ni dépendance à un dépôt voisin. Les informations de licence sont reprises dans [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Le projet n'a pas encore de licence propre ni d'identifiant de publication Marketplace ; `local` est un identifiant de développement à remplacer avant une publication sur le Marketplace.
+Le projet n'a pas encore de licence propre. L'identifiant de l'extension est `Jisko.mips-runner`.

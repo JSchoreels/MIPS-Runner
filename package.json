@@ -2,9 +2,13 @@
   "name": "mips-runner",
   "displayName": "MIPS Runner",
   "description": "Run and inspect MIPS assembly with the SPIM simulator inside VS Code.",
-  "version": "0.0.2",
-  "publisher": "local",
+  "version": "0.0.3",
+  "publisher": "Jisko",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JSchoreels/MIPS-Runner.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

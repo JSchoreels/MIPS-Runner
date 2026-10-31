@@ -1,5 +1,17 @@
 # Historique des versions
 
+## 0.0.3
+
+**User facing changes**
+
+- MIPS Runner utilise désormais l'identifiant officiel `Jisko.mips-runner` pour sa distribution sur GitHub et le Marketplace VS Code.
+- Si la version de développement `local.mips-runner` est déjà installée, désinstallez-la avant d'installer cette version pour éviter d'activer deux extensions identiques.
+
+**Technical details**
+
+- Le manifeste référence le dépôt GitHub et le publisher Jisko ; les fonctionnalités et la compatibilité avec VS Code 1.85 ou ultérieur restent inchangées.
+- Vérifications : contrôles JavaScript, tests du chargement et de l'exécution SPIM, installation du VSIX dans un profil isolé et test des infobulles et du validateur dans VS Code.
+
 ## 0.0.2
 
 Première version de MIPS Runner pour VS Code sur ordinateur. Le fichier VSIX joint peut être installé depuis la vue Extensions, via « … » puis « Installer à partir d’un VSIX ».
