@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+*.vsix
+!.vscode/
+.vscode/*
+!.vscode/launch.json
+vendor/spim/source/*.o
+vendor/spim/source/lex.yy.cpp
+vendor/spim/source/parser_yacc.cpp
+vendor/spim/source/parser_yacc.h

@@ -1,0 +1,90 @@
+{
+  "name": "mips-runner",
+  "displayName": "MIPS Runner",
+  "description": "Run and inspect MIPS assembly with the SPIM simulator inside VS Code.",
+  "version": "0.0.2",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Debuggers", "Programming Languages"],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:mips",
+    "onCommand:mipsRunner.loadActiveFile",
+    "onView:mipsRunner.simulator"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "MIPS Runner",
+      "properties": {
+        "mipsRunner.openBehavior": {
+          "type": "string",
+          "scope": "resource",
+          "default": "ask",
+          "enum": ["ask", "auto", "manual"],
+          "enumDescriptions": [
+            "Ask whether to load an active MIPS file.",
+            "Automatically load the active MIPS file.",
+            "Only load files using the MIPS Runner command."
+          ],
+          "description": "Choose what MIPS Runner does when a MIPS file becomes active."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "mips",
+        "aliases": ["MIPS", "mips"],
+        "extensions": [".s", ".asm", ".mips"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mips",
+        "scopeName": "source.mips",
+        "path": "./syntaxes/mips.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mipsRunner.loadActiveFile",
+        "title": "MIPS Runner: Load Active File",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "mipsRunner.loadActiveFile",
+          "when": "resourceExtname == .s || resourceExtname == .asm || resourceExtname == .mips",
+          "group": "navigation"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "mipsRunner",
+          "title": "MIPS Runner",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "mipsRunner": [
+        {
+          "id": "mipsRunner.simulator",
+          "type": "webview",
+          "name": "Simulator"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "check:extension": "node --check src/extension.js",
+    "check:runner": "node --check media/runner.js"
+  }
+}
