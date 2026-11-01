@@ -1,4 +1,16 @@
-# Historique des versions
+# Changelog
+
+## 0.0.12
+
+**User facing changes**
+
+- Read the extension overview and usage instructions in English on the Marketplace and GitHub.
+- Recognize MIPS Runner more easily in VS Code and on the Marketplace with the new MIPS Run icon.
+
+**Technical details**
+
+- Added a 512×512 PNG icon to the extension package, with its editable SVG source.
+- Verified the package, documentation links, and bundled icon without opening a visible application window.
 
 ## 0.0.11
 
