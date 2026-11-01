@@ -35,6 +35,8 @@
 #include <unistd.h>
 #endif
 #include <sys/types.h>
+#include <algorithm>
+#include <vector>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -52,6 +54,7 @@
 #include "sym-tbl.h"
 #include "syscall.h"
 #include "register-access.h"
+#include "change-history.h"
 
 
 #ifdef _WIN32
@@ -220,13 +223,24 @@ do_syscall ()
 
     case READ_SYSCALL:
       {
-	/* Test if address is valid */
-	(void)mem_reference (R[REG_A1] + R[REG_A2] - 1);
+	/* File reads write directly into the simulator's memory buffer. */
+        const mem_addr address = R[REG_A1];
+        const reg_word length = R[REG_A2];
+        (void)mem_reference (address + length - 1);
+        unsigned char *target = (unsigned char *) mem_reference (address);
+        const size_t tracked = change_history_active () && target && length > 0
+          ? traceable_memory_bytes (address, static_cast<size_t> (length)) : 0;
+        std::vector<unsigned char> before;
+        if (tracked) before.assign (target, target + tracked);
 #ifdef _WIN32
-	R[REG_RES] = _read(R[REG_A0], mem_reference (R[REG_A1]), R[REG_A2]);
+        const reg_word result = _read(R[REG_A0], target, length);
 #else
-	R[REG_RES] = read(R[REG_A0], mem_reference (R[REG_A1]), R[REG_A2]);
+        const reg_word result = read(R[REG_A0], target, length);
 #endif
+        R[REG_RES] = result;
+        if (result > 0)
+          for (size_t i = 0, end = std::min (tracked, static_cast<size_t> (result)); i < end; ++i)
+            if (target[i] != before[i]) record_memory_change (address + i);
 	data_modified = true;
 	break;
       }

@@ -2,7 +2,7 @@
 
 ## SPIM
 
-The SPIM source in `vendor/spim` derives from [JsSpim](https://github.com/ShawnZhong/JsSpim) and includes SPIM code by James R. Larus. It has been modified to record register reads and writes; the bundled WebAssembly was rebuilt from these modified sources. The original source files retain their copyright notices. The following notice is reproduced from `vendor/spim/source/spim.cpp` for the distributed binary:
+The SPIM source in `vendor/spim` derives from [JsSpim](https://github.com/ShawnZhong/JsSpim) and includes SPIM code by James R. Larus. It has been modified to record register reads and writes and the last instruction to change registers or memory; the bundled WebAssembly was rebuilt from these modified sources. The original source files retain their copyright notices. The following notice is reproduced from `vendor/spim/source/spim.cpp` for the distributed binary:
 
 Copyright (c) 1990-2015, James R. Larus. All rights reserved.
 

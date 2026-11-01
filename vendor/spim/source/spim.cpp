@@ -36,6 +36,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <algorithm>
+#include <unordered_map>
 
 #include "spim.h"
 #include "string-stream.h"
@@ -43,6 +45,7 @@
 #include "inst.h"
 #include "reg.h"
 #include "register-access.h"
+#include "change-history.h"
 #include "mem.h"
 #include "data.h"
 #include "version.h"
@@ -60,7 +63,46 @@ bool mapped_io;            /* => activate memory-mapped IO */
 int spim_return_value;        /* Value returned when spim exits */
 
 static str_stream ss;
+static unsigned int register_last_changed[32] = {};
+static std::unordered_map<uint32_t, uint32_t> memory_last_changed;
+static bool tracking_changes = false;
+static uint32_t tracked_instruction = 0;
+
+void clearChangeHistory() {
+  std::fill(register_last_changed, register_last_changed + 32, 0);
+  memory_last_changed.clear();
+}
+
+bool change_history_active() { return tracking_changes; }
+
+void record_memory_change(uint32_t address) {
+  if (tracking_changes) memory_last_changed[address & ~uint32_t(3)] = tracked_instruction;
+}
+
+void record_memory_pointer_change(const void* pointer, unsigned char old_value, unsigned char new_value) {
+  if (!tracking_changes || old_value == new_value) return;
+  const uintptr_t value = reinterpret_cast<uintptr_t>(pointer);
+  const uintptr_t data_offset = value - reinterpret_cast<uintptr_t>(data_seg);
+  const uintptr_t stack_offset = value - reinterpret_cast<uintptr_t>(stack_seg);
+  if (data_offset < data_top - DATA_BOT) record_memory_change(DATA_BOT + data_offset);
+  else if (stack_offset < STACK_TOP - stack_bot) record_memory_change(stack_bot + stack_offset);
+}
+
+size_t traceable_memory_bytes(uint32_t address, size_t requested) {
+  if (address >= DATA_BOT && address < data_top) return std::min(requested, size_t(data_top - address));
+  if (address >= stack_bot && address < STACK_TOP) return std::min(requested, size_t(STACK_TOP - address));
+  return 0;
+}
+
+unsigned int getMemoryLastChange(unsigned int address) {
+  const auto found = memory_last_changed.find(address & ~uint32_t(3));
+  return found == memory_last_changed.end() ? 0 : found->second;
+}
+
+val getRegisterLastChanges() { return val(typed_memory_view(32, register_last_changed)); }
+
 void init() {
+  clearChangeHistory();
   error("Based on <a href='http://spimsimulator.sourceforge.net/'>SPIM</a> %s "
         "by <a href='https://people.epfl.ch/james.larus'>James Larus</a>.\n",
         SPIM_VERSION);
@@ -79,8 +121,16 @@ int step(int step_size, bool cont_bkpt) {
   mem_addr addr = PC == 0 ? starting_address() : PC;
   if (step_size == 0) step_size = DEFAULT_RUN_STEPS;
 
+  reg_word before[32];
+  std::copy(R, R + 32, before);
+  tracking_changes = true;
+  tracked_instruction = addr;
   bool continuable, bp_encountered;
   bp_encountered = run_program(addr, step_size, false, cont_bkpt, &continuable);
+  tracking_changes = false;
+  if (!bp_encountered)
+    for (unsigned int index = 0; index < 32; ++index)
+      if (R[index] != before[index]) register_last_changed[index] = addr;
 
   if (!continuable) { // finished
     printf("\n"); // to flush output
@@ -144,6 +194,9 @@ EMSCRIPTEN_BINDINGS(getUserData) { function("getUserData", &getUserData); }
 EMSCRIPTEN_BINDINGS(getKernelData) { function("getKernelData", &getKernelData); }
 EMSCRIPTEN_BINDINGS(getGeneralRegVals) { function("getGeneralRegVals", &getGeneralRegVals); }
 EMSCRIPTEN_BINDINGS(getRegisterAccesses) { function("getRegisterAccesses", &getRegisterAccesses); }
+EMSCRIPTEN_BINDINGS(clearChangeHistory) { function("clearChangeHistory", &clearChangeHistory); }
+EMSCRIPTEN_BINDINGS(getMemoryLastChange) { function("getMemoryLastChange", &getMemoryLastChange); }
+EMSCRIPTEN_BINDINGS(getRegisterLastChanges) { function("getRegisterLastChanges", &getRegisterLastChanges); }
 EMSCRIPTEN_BINDINGS(getFloatRegVals) { function("getFloatRegVals", &getFloatRegVals); }
 EMSCRIPTEN_BINDINGS(getDoubleRegVals) { function("getDoubleRegVals", &getDoubleRegVals); }
 EMSCRIPTEN_BINDINGS(getSpecialRegVals) { function("getSpecialRegVals", &getSpecialRegVals); }
@@ -199,13 +252,17 @@ void read_input(char *str, int str_size) {
     if (read((int) console_in.i, buf, 1) <= 0) /* Not in raw mode! */
       break;
 
+    record_memory_pointer_change(ptr, static_cast<unsigned char>(*ptr), static_cast<unsigned char>(buf[0]));
     *ptr++ = buf[0];
     str_size -= 1;
 
     if (buf[0] == '\n') break;
   }
 
-  if (0 < str_size) *ptr = '\0'; /* Null terminate input */
+  if (0 < str_size) {
+    record_memory_pointer_change(ptr, static_cast<unsigned char>(*ptr), 0);
+    *ptr = '\0'; /* Null terminate input */
+  }
 }
 
 int console_input_available() {

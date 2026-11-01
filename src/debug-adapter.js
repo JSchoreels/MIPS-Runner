@@ -51,7 +51,18 @@ class MipsDebugAdapter {
         if (typeof program !== 'string' || !program) throw new Error('Open a MIPS file before starting debugging.');
         const uri = path.isAbsolute(program) ? vscode.Uri.file(program) : vscode.Uri.parse(program);
         const document = await vscode.workspace.openTextDocument(uri);
-        await this.provider.loadDocument(document, true);
+        const panelStart = args.__mipsRunnerPanelStart;
+        if (panelStart) {
+            const state = this.provider.workerState;
+            if (!['run', 'step', 'attach'].includes(panelStart.action) ||
+                this.provider.panelDebugStart?.token !== panelStart.token || panelStart.sourceId !== this.provider.sourceId ||
+                this.provider.document !== document || document.version !== this.provider.sourceVersion ||
+                state?.sourceId !== panelStart.sourceId || !state.loaded || state.stale || state.finished || state.running) {
+                throw new Error('The loaded program changed before debugging started.');
+            }
+        } else {
+            await this.provider.loadDocument(document, true);
+        }
         if (this.provider.document !== document) throw new Error('The loaded file changed before debugging started.');
         const sourceId = this.provider.sourceId;
         const state = await this.provider.waitForState(item => item.sourceId !== sourceId || item.stale ||
@@ -62,7 +73,8 @@ class MipsDebugAdapter {
         if (!state.loaded) throw new Error(state.status);
         this.sourceId = sourceId;
         this.noDebug = args.noDebug === true;
-        this.stopOnEntry = !this.noDebug && args.stopOnEntry === true;
+        this.panelStart = panelStart;
+        this.stopOnEntry = !this.noDebug && (args.stopOnEntry === true || panelStart?.action === 'attach');
         this.lastRevision = state.executionRevision;
         this.onState(state);
     }
@@ -150,8 +162,10 @@ class MipsDebugAdapter {
             this.configured = true;
             this.lastRevision = this.provider.workerState.executionRevision;
             this.sendResponse(request);
-            if (this.stopOnEntry) this.sendEvent('stopped', { reason: 'entry', threadId: THREAD_ID, allThreadsStopped: true });
+            if (this.panelStart?.action === 'step') this.provider.sendAction({ type: 'step' });
+            else if (this.stopOnEntry) this.sendEvent('stopped', { reason: 'entry', threadId: THREAD_ID, allThreadsStopped: true });
             else this.provider.sendAction({ type: 'resume', ignoreBreakpoints: this.noDebug });
+            if (this.panelStart) this.provider.finishPanelDebugStart(this.panelStart.token, true);
             return;
         case 'threads':
             this.sendResponse(request, { threads: [{ id: THREAD_ID, name: 'MIPS' }] });

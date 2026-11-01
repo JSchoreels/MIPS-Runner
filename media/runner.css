@@ -57,7 +57,7 @@ button:disabled { opacity: .5; cursor: default; }
 .memory-sections > section + section { border-top: 1px solid var(--vscode-panel-border); }
 .memory-head, .memory-row {
     display: grid;
-    grid-template-columns: minmax(10ch, .7fr) minmax(0, 1.3fr);
+    grid-template-columns: minmax(10ch, .7fr) minmax(0, 1.3fr) max-content;
     gap: 8px;
     align-items: baseline;
     padding: 5px 12px;
@@ -73,7 +73,7 @@ button:disabled { opacity: .5; cursor: default; }
 .registers::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background, rgba(128, 128, 128, .6)); border-radius: 5px; }
 .registers::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground, rgba(128, 128, 128, .8)); }
 .register-empty { grid-column: 1 / -1; margin: 0; color: var(--vscode-descriptionForeground); }
-.register-row { display: grid; grid-template-columns: 5ch minmax(0, 1fr); gap: 0 8px; align-items: baseline; min-width: 0; padding: 4px 8px; border: 1px solid transparent; border-radius: 2px; background: transparent; color: var(--vscode-foreground); text-align: left; font-family: var(--vscode-editor-font-family, monospace); font-size: .9em; }
+.register-row { display: grid; grid-template-columns: 5ch minmax(0, 1fr) auto; gap: 0 8px; align-items: baseline; min-width: 0; padding: 4px 8px; border: 1px solid transparent; border-radius: 2px; background: transparent; color: var(--vscode-foreground); text-align: left; font-family: var(--vscode-editor-font-family, monospace); font-size: .9em; }
 .register-value { min-width: 0; overflow-wrap: anywhere; }
 button.register-row:hover { border-color: var(--vscode-focusBorder); }
 .register-name { color: var(--vscode-symbolIcon-variableForeground, var(--vscode-foreground)); }
@@ -82,6 +82,11 @@ button.register-row:hover { border-color: var(--vscode-focusBorder); }
 .selected-pointer .register-name, .selected-pointer .register-pointer, .selected-pointer .decimal { color: inherit; }
 .decimal { color: var(--vscode-descriptionForeground); text-align: right; }
 .address { color: var(--vscode-textLink-foreground); }
+button.address, button.last-change { padding: 0; border: 0; background: transparent; font: inherit; text-align: left; }
+button.address:hover, button.last-change:hover { text-decoration: underline; }
+.last-change { color: var(--vscode-descriptionForeground); white-space: nowrap; }
+button.last-change { color: var(--vscode-textLink-foreground); }
+.selected-pointer .last-change, .pointed .last-change { color: inherit; }
 .changed { background: var(--vscode-editor-findMatchHighlightBackground); }
 .pointed { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
 .pointed .address, .pointed .decimal, .pointed .memory-pointer { color: inherit; }

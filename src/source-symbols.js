@@ -63,6 +63,49 @@ function collectSourceRegisters(source) {
     return [...registers].sort((a, b) => a - b);
 }
 
+// Find references to the same physical register, including numeric aliases.
+function registerReferences(source, index) {
+    const references = [];
+    source.split(/\r?\n/).forEach((line, lineNumber) => {
+        let offset = 0;
+        for (const part of codeOnly(line).split(';')) {
+            let statement = part;
+            let prefix = 0;
+            let label;
+            while ((label = statement.match(leadingLabel))) {
+                prefix += label[0].length;
+                statement = statement.slice(label[0].length);
+            }
+            if (/^\s*[A-Za-z][A-Za-z0-9_.]*\b/.test(statement)) {
+                for (const match of statement.matchAll(/\$[A-Za-z0-9_.$]+/g)) {
+                    if (match.index && /[A-Za-z0-9_.$]/.test(statement[match.index - 1])) continue;
+                    if (registerIndex(match[0]) !== index) continue;
+                    const start = offset + prefix + match.index;
+                    references.push({ line: lineNumber, start, end: start + match[0].length });
+                }
+            }
+            offset += part.length + 1;
+        }
+    });
+    return references;
+}
+
+// Match only exact labels resolved for the selected memory address.
+function symbolReferences(source, names) {
+    const wanted = new Set(names);
+    const references = [];
+    if (!wanted.size) return references;
+    source.split(/\r?\n/).forEach((line, lineNumber) => {
+        const code = codeOnly(line);
+        const pattern = new RegExp(IDENTIFIER, 'g');
+        for (const match of code.matchAll(pattern)) {
+            if (match.index && /[A-Za-z0-9_.$]/.test(code[match.index - 1])) continue;
+            if (wanted.has(match[0])) references.push({ line: lineNumber, start: match.index, end: match.index + match[0].length });
+        }
+    });
+    return references;
+}
+
 function symbolAt(line, character) {
     const code = codeOnly(line);
     if (character < line.length && code[character] === ' ' && !/\s/.test(line[character])) return undefined;
@@ -76,4 +119,4 @@ function symbolAt(line, character) {
     return undefined;
 }
 
-module.exports = { collectLabels, collectSourceRegisters, symbolAt };
+module.exports = { collectLabels, collectSourceRegisters, registerReferences, symbolReferences, symbolAt };

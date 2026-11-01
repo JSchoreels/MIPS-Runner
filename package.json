@@ -2,7 +2,7 @@
   "name": "mips-runner",
   "displayName": "MIPS Runner",
   "description": "Run and inspect MIPS assembly with the SPIM simulator inside VS Code.",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "publisher": "Jisko",
   "license": "UNLICENSED",
   "repository": {
@@ -48,7 +48,7 @@
         "mipsRunner.openBehavior": {
           "type": "string",
           "scope": "resource",
-          "default": "ask",
+          "default": "auto",
           "enum": ["ask", "auto", "manual"],
           "enumDescriptions": [
             "Ask whether to load an active MIPS file.",

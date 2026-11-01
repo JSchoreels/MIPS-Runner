@@ -37,6 +37,7 @@
 #include "inst.h"
 #include "reg.h"
 #include "mem.h"
+#include "change-history.h"
 
 /* Exported Variables: */
 
@@ -382,9 +383,19 @@ set_mem_inst(mem_addr addr, instruction* inst)
 }
 
 
+static bool
+traceable_write (mem_addr addr, int mask)
+{
+  return change_history_active () && !(addr & mask)
+    && ((addr >= DATA_BOT && addr < data_top)
+        || (addr >= stack_bot && addr < STACK_TOP));
+}
+
 void
 set_mem_byte(mem_addr addr, reg_word value)
 {
+  const bool trace = traceable_write (addr, 0);
+  const reg_word before = trace ? read_mem_byte (addr) : 0;
   data_modified = true;
   if ((addr >= DATA_BOT) && (addr < data_top))
     data_seg_b [addr - DATA_BOT] = (BYTE_TYPE) value;
@@ -394,12 +405,16 @@ set_mem_byte(mem_addr addr, reg_word value)
     k_data_seg_b [addr - K_DATA_BOT] = (BYTE_TYPE) value;
   else
     bad_mem_write (addr, value, 0);
+  if (trace && read_mem_byte (addr) != before)
+    record_memory_change (addr);
 }
 
 
 void
 set_mem_half(mem_addr addr, reg_word value)
 {
+  const bool trace = traceable_write (addr, 0x1);
+  const reg_word before = trace ? read_mem_half (addr) : 0;
   data_modified = true;
   if ((addr >= DATA_BOT) && (addr < data_top) && !(addr & 0x1))
     data_seg_h [(addr - DATA_BOT) >> 1] = (short) value;
@@ -409,12 +424,16 @@ set_mem_half(mem_addr addr, reg_word value)
     k_data_seg_h [(addr - K_DATA_BOT) >> 1] = (short) value;
   else
     bad_mem_write (addr, value, 0x1);
+  if (trace && read_mem_half (addr) != before)
+    record_memory_change (addr);
 }
 
 
 void
 set_mem_word(mem_addr addr, reg_word value)
 {
+  const bool trace = traceable_write (addr, 0x3);
+  const reg_word before = trace ? read_mem_word (addr) : 0;
   data_modified = true;
   if ((addr >= DATA_BOT) && (addr < data_top) && !(addr & 0x3))
     data_seg [(addr - DATA_BOT) >> 2] = (mem_word) value;
@@ -424,6 +443,8 @@ set_mem_word(mem_addr addr, reg_word value)
     k_data_seg [(addr - K_DATA_BOT) >> 2] = (mem_word) value;
   else
     bad_mem_write (addr, value, 0x3);
+  if (trace && read_mem_word (addr) != before)
+    record_memory_change (addr);
 }
 
 
@@ -569,6 +590,9 @@ bad_mem_write (mem_addr addr, mem_word value, int mask)
 	stack_seg_h [(addr - stack_bot) >> 1] = (short)value;
       else
 	stack_seg [(addr - stack_bot) >> 2] = value;
+      // Newly allocated stack words are zero-initialized.
+      if (change_history_active () && read_mem_word (addr & ~3u) != 0)
+        record_memory_change (addr);
     }
     else
       RAISE_EXCEPTION (ExcCode_DBE, CP0_BadVAddr = addr)

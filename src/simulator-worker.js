@@ -18,7 +18,7 @@ const state = {
     inputText: '', input: [], inputPosition: 0, stackBaseOffset: undefined, stackSafe: true,
     dataAddress: 0x10010000, stackAddress: 0, followStack: true, selectedRegister: undefined, selectedAddress: undefined, selectedSymbol: undefined,
     registerSelectionRevision: 0, breakpointRevision: 0, executionRevision: 0, executionReason: undefined,
-    instructions: [], sourceRegisters: [], accessedRegisterMask: 0, breakpoints: new Set(), previous: undefined, current: undefined,
+    instructions: [], instructionByAddress: new Map(), sourceRegisters: [], accessedRegisterMask: 0, breakpoints: new Set(), previous: undefined, current: undefined,
     status: 'Loading the SPIM runtime…', output: '', log: ''
 };
 
@@ -36,7 +36,7 @@ function appendLine(field, value) {
 function snapshotForView(snapshot) {
     if (!snapshot) return undefined;
     return {
-        registers: snapshot.registers, pc: snapshot.pc,
+        registers: snapshot.registers, registerChanges: snapshot.registerChanges, pc: snapshot.pc,
         data: { length: snapshot.data.length }, stack: { length: snapshot.stack.length },
         dataRows: snapshot.dataRows, stackRows: snapshot.stackRows, pointerTrace: snapshot.pointerTrace
     };
@@ -110,9 +110,16 @@ function tracePointer(address, data, stack) {
     return { entries, reason: memorySegment(address, data, stack) ? 'limit' : 'value' };
 }
 
+function changeForInstruction(address) {
+    if (!address) return undefined;
+    const instruction = state.instructionByAddress.get(address >>> 0);
+    return { address: address >>> 0, sourceLine: instruction?.sourceLine, sourceText: instruction?.displayText };
+}
+
 function capture(preserveAddresses = false) {
     const module = context.Module;
     const registers = Array.from(module.getGeneralRegVals(), value => value >>> 0);
+    const registerChanges = Array.from(module.getRegisterLastChanges(), changeForInstruction);
     const data = module.getUserData();
     const stack = module.getStack();
     const pc = module.getSpecialRegVals()[0] >>> 0;
@@ -136,10 +143,14 @@ function capture(preserveAddresses = false) {
     for (let i = 0; i < 8; i++) {
         const dataAddress = state.dataAddress + i * 4;
         const stackAddress = state.stackAddress + i * 4;
-        dataRows.push({ address: dataAddress, value: isDataAddress(dataAddress, data) ? readWord(dataAddress, 'data', data, stack) : undefined });
-        stackRows.push({ address: stackAddress, value: isStackAddress(stackAddress, stack) ? readWord(stackAddress, 'stack', data, stack) : undefined });
+        const dataValid = isDataAddress(dataAddress, data);
+        const stackValid = isStackAddress(stackAddress, stack);
+        dataRows.push({ address: dataAddress, value: dataValid ? readWord(dataAddress, 'data', data, stack) : undefined,
+            lastChange: dataValid ? changeForInstruction(module.getMemoryLastChange(dataAddress)) : undefined });
+        stackRows.push({ address: stackAddress, value: stackValid ? readWord(stackAddress, 'stack', data, stack) : undefined,
+            lastChange: stackValid ? changeForInstruction(module.getMemoryLastChange(stackAddress)) : undefined });
     }
-    return { registers, pc, data, stack, dataRows, stackRows, pointerTrace };
+    return { registers, registerChanges, pc, data, stack, dataRows, stackRows, pointerTrace };
 }
 
 function readInstructions(listing, source) {
@@ -212,7 +223,10 @@ function assemble() {
         state.assembling = false;
         state.loaded = !state.assemblyError;
         state.instructions = readInstructions(context.Module.getUserText(), state.source);
+        state.instructionByAddress = new Map(state.instructions.map(instruction => [instruction.address, instruction]));
         if (state.loaded) prepareEntryPoint();
+        // Startup initializes registers but is not part of the user's execution.
+        context.Module.clearChangeHistory();
         state.current = capture();
         state.status = state.assemblyError ? 'Assembly error — see SPIM log.' : `Ready · PC ${hex(state.current.pc)}`;
     } catch (error) {
@@ -330,7 +344,7 @@ function onMessage(message) {
     } else if (message.type === 'sourceChanged' && state.source !== undefined) {
         stopRunning();
         state.stale = true;
-        state.status = 'Source changed — assemble again to apply edits.';
+        state.status = 'Source changed — Run, Step or Reset to apply edits.';
         noteExecution('sourceChanged');
         publish();
     } else if (message.type === 'input') {
@@ -433,7 +447,7 @@ try {
                 state.ready = true;
                 if (state.source !== undefined && !state.stale) assemble();
                 else {
-                    state.status = state.stale ? 'Source changed — assemble again to apply edits.' : 'Open a MIPS file, then choose Load active file.';
+                    state.status = state.stale ? 'Source changed — Run, Step or Reset to apply edits.' : 'Open a MIPS file to get started.';
                     publish();
                 }
             },

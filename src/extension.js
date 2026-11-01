@@ -7,7 +7,7 @@ const vscode = require('vscode');
 const { registerHover } = require('./hover');
 const { registerValidation } = require('./validation');
 const { registerAutoOpen } = require('./auto-open');
-const { symbolAt } = require('./source-symbols');
+const { registerReferences, symbolReferences, symbolAt } = require('./source-symbols');
 const { registerIndex } = require('./registers');
 const { registerDebugger } = require('./debug-adapter');
 
@@ -27,11 +27,28 @@ class SimulatorView {
         this.pendingSelection = undefined;
         this.pendingBreakpoints = undefined;
         this.breakpointRevision = 0;
+        this.debugSessions = new Set();
+        this.debugSessionEvents = new vscode.EventEmitter();
+        this.panelReassembly = false;
+        this.queuedPanelActions = [];
+        this.panelDebugStart = undefined;
+        this.panelDebugSequence = 0;
         this.stateEvents = new vscode.EventEmitter();
         this.onDidChangeState = this.stateEvents.event;
         this.sourceId = 0;
         this.sourceVersion = undefined;
         this.executionLine = undefined;
+        this.sourceHighlights = [];
+        this.lastChangeLine = undefined;
+        this.lastChangeDecoration = vscode.window.createTextEditorDecorationType({
+            isWholeLine: true,
+            backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground')
+        });
+        this.sourceHighlightDecoration = vscode.window.createTextEditorDecorationType({
+            backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackground'),
+            borderColor: new vscode.ThemeColor('editor.wordHighlightBorder'),
+            borderWidth: '1px', borderStyle: 'solid', borderRadius: '2px'
+        });
         this.executionDecoration = vscode.window.createTextEditorDecorationType({
             isWholeLine: true,
             backgroundColor: new vscode.ThemeColor('editor.stackFrameHighlightBackground'),
@@ -69,6 +86,8 @@ class SimulatorView {
         if (event.contentChanges.length && this.document && event.document.uri.toString() === this.document.uri.toString()) {
             this.sourceVersion = undefined;
             this.executionLine = undefined;
+            this.sourceHighlights = [];
+            this.lastChangeLine = undefined;
             this.pendingSelection = undefined;
             this.pendingBreakpoints = undefined;
             this.symbols = undefined;
@@ -84,12 +103,19 @@ class SimulatorView {
             const range = matches && this.executionLine !== undefined
                 ? new vscode.Range(this.executionLine, 0, this.executionLine, 0) : undefined;
             editor.setDecorations(this.executionDecoration, range ? [range] : []);
+            editor.setDecorations(this.sourceHighlightDecoration, matches ? this.sourceHighlights : []);
+            const lastChange = matches && this.lastChangeLine !== undefined
+                ? new vscode.Range(this.lastChangeLine, 0, this.lastChangeLine, 0) : undefined;
+            editor.setDecorations(this.lastChangeDecoration, lastChange ? [lastChange] : []);
             if (range && reveal) editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
         }
     }
 
     dispose() {
         this.executionDecoration.dispose();
+        this.sourceHighlightDecoration.dispose();
+        this.lastChangeDecoration.dispose();
+        this.debugSessionEvents.dispose();
         this.stateEvents.dispose();
         this.stopSymbolWorker();
         if (this.worker) void this.worker.terminate();
@@ -140,6 +166,11 @@ class SimulatorView {
             this.pendingSelection = undefined;
             return;
         }
+        if ((this.sourceHighlights.length || this.lastChangeLine !== undefined) && event.kind !== undefined) {
+            this.sourceHighlights = [];
+            this.lastChangeLine = undefined;
+            this.updateDecorations();
+        }
         const selection = event.selections[0];
         if (selection.start.line !== selection.end.line) { this.pendingSelection = undefined; return; }
         const position = selection.isEmpty ? selection.active : selection.start;
@@ -153,6 +184,41 @@ class SimulatorView {
         }
         this.pendingSelection = { name, register, sourceId: this.sourceId };
         this.selectPendingSelection();
+    }
+
+    async highlightSource(references, lastChange) {
+        const document = this.document;
+        if (!document || document.isClosed || document.version !== this.sourceVersion ||
+            !this.workerState?.loaded || this.workerState.stale) return;
+        const line = Number.isInteger(lastChange?.sourceLine) && lastChange.sourceLine >= 0 &&
+            lastChange.sourceLine < document.lineCount ? lastChange.sourceLine : undefined;
+        let editor = vscode.window.visibleTextEditors.find(item => item.document === document);
+        if (!editor && (references.length || line !== undefined)) {
+            editor = await vscode.window.showTextDocument(document, { preserveFocus: true });
+        }
+        if (document !== this.document || document.isClosed || document.version !== this.sourceVersion) return;
+        this.sourceHighlights = references.map(item => new vscode.Range(item.line, item.start, item.line, item.end));
+        this.lastChangeLine = line;
+        this.updateDecorations();
+        const reference = references.find(item => item.line === this.executionLine) || references[0];
+        const target = line !== undefined ? new vscode.Range(line, 0, line, 0)
+            : reference && new vscode.Range(reference.line, reference.start, reference.line, reference.end);
+        if (editor && target) editor.revealRange(target, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+
+    highlightRegisterInSource(index) {
+        if (!Number.isInteger(index) || index < 0 || index >= 32 || !this.document) return;
+        const references = registerReferences(this.document.getText(), index);
+        void this.highlightSource(references, this.workerState?.current?.registerChanges?.[index]);
+    }
+
+    highlightMemoryInSource(address) {
+        if (!Number.isInteger(address) || !this.document) return;
+        const names = [...(this.symbols || [])].filter(([, value]) => value === address).map(([name]) => name);
+        const references = symbolReferences(this.document.getText(), names);
+        const snapshot = this.workerState?.current;
+        const row = [...(snapshot?.dataRows || []), ...(snapshot?.stackRows || [])].find(item => item.address === address);
+        void this.highlightSource(references, row?.lastChange);
     }
 
     selectPendingSelection() {
@@ -257,16 +323,144 @@ class SimulatorView {
     async ensureSourceBreakpoints() {
         const sourceId = this.sourceId;
         this.syncSourceBreakpoints();
-        return this.waitForState(state => {
-            if (state.sourceId !== sourceId || !state.loaded || state.stale || this.pendingBreakpoints) return false;
-            const desired = this.sourceBreakpointAddresses(state);
-            const actual = [...state.breakpoints].sort((a, b) => a - b);
+        const state = await this.waitForState(next => {
+            if (next.sourceId !== sourceId || next.stale || !this.document || this.document.version !== this.sourceVersion) return true;
+            if (!next.loaded || this.pendingBreakpoints) return false;
+            const desired = this.sourceBreakpointAddresses(next);
+            const actual = [...next.breakpoints].sort((a, b) => a - b);
             return desired.length === actual.length && desired.every((address, index) => address === actual[index]);
         });
+        if (state.sourceId !== sourceId || state.stale || !this.document || this.document.version !== this.sourceVersion) {
+            throw new Error('The source changed before breakpoints were synchronized.');
+        }
+        return state;
     }
 
     sendAction(action) {
         this.worker?.postMessage(action);
+    }
+
+    onDebugSessionStarted(session) {
+        if (session.type === 'mips-runner') this.debugSessions.add(session.id);
+    }
+
+    onDebugSessionTerminated(session) {
+        if (session.type !== 'mips-runner') return;
+        this.debugSessions.delete(session.id);
+        this.debugSessionEvents.fire();
+        this.finishPanelDebugStart(session.configuration.__mipsRunnerPanelStart?.token, false);
+    }
+
+    finishPanelDebugStart(token, started) {
+        const pending = this.panelDebugStart;
+        if (!pending || pending.token !== token) return;
+        this.panelDebugStart = undefined;
+        const state = this.workerState;
+        if (state?.sourceId !== pending.sourceId || !state.loaded || state.stale || state.finished) return;
+        const actions = started ? pending.queued : [pending.action, ...pending.queued];
+        for (const type of actions) if (type !== 'attach') this.sendAction({ type });
+    }
+
+    async startPanelDebug(action) {
+        const state = this.workerState;
+        if (this.panelDebugStart || this.debugSessions.size || !this.document || !state?.loaded ||
+            state.stale || state.finished || state.running || state.sourceId !== this.sourceId) return;
+        const pending = { token: ++this.panelDebugSequence, sourceId: state.sourceId, action, queued: [] };
+        this.panelDebugStart = pending;
+        try {
+            const started = await vscode.debug.startDebugging(undefined, {
+                type: 'mips-runner', request: 'launch', name: 'Debug MIPS', program: this.document.uri.toString(),
+                internalConsoleOptions: 'neverOpen', __mipsRunnerPanelStart: { token: pending.token, sourceId: pending.sourceId, action }
+            });
+            if (!started && this.panelDebugStart?.token === pending.token) {
+                this.finishPanelDebugStart(pending.token, false);
+                void vscode.window.showWarningMessage('VS Code could not start debugging; Watch is unavailable.');
+            }
+        } catch (error) {
+            this.finishPanelDebugStart(pending.token, false);
+            void vscode.window.showErrorMessage(`MIPS Runner could not start debugging: ${error.message || error}`);
+        }
+    }
+
+    async waitForDebugSessionsToEnd() {
+        if (!this.debugSessions.size) return;
+        await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { subscription.dispose(); reject(new Error('Timed out waiting for the previous debug session to end.')); }, 15000);
+            const subscription = this.debugSessionEvents.event(() => {
+                if (this.debugSessions.size) return;
+                clearTimeout(timer);
+                subscription.dispose();
+                resolve();
+            });
+        });
+    }
+
+    async reassembleForPanel(type) {
+        this.panelReassembly = true;
+        const document = this.document;
+        const version = document?.version;
+        let execute = false;
+        try {
+            // Editing a running program ends its old debug session. Wait before
+            // starting a replacement so its disconnect cannot pause the new one.
+            await this.waitForDebugSessionsToEnd();
+            if (!document || document !== this.document || document.isClosed || document.version !== version) return;
+            this.sendSource();
+            const sourceId = this.sourceId;
+            const state = await this.waitForState(next => next.sourceId !== sourceId || next.stale || next.loaded ||
+                (next.ready && /assembly error|unable to assemble|could not start/i.test(next.status)));
+            if (state.sourceId !== sourceId || state.stale || !state.loaded || this.document !== document ||
+                document.version !== version) return;
+            await this.ensureSourceBreakpoints();
+            if (this.document !== document || document.version !== version || this.sourceId !== sourceId) return;
+            execute = type !== 'reset';
+        } catch (error) {
+            if (document === this.document && document?.version === version) {
+                void vscode.window.showErrorMessage(`MIPS Runner could not restart: ${error.message || error}`);
+            }
+        } finally {
+            this.panelReassembly = false;
+            const queued = this.queuedPanelActions.splice(0);
+            if (document === this.document && !document?.isClosed) {
+                // A further edit during assembly invalidated the result: retry
+                // the original action against the latest buffer.
+                if (document.version !== version || execute) this.onPanelExecution({ type });
+                for (const action of queued) this.onPanelExecution({ type: action });
+            }
+        }
+    }
+
+    onPanelExecution(action) {
+        if (this.panelReassembly) {
+            this.queuedPanelActions.push(action.type);
+            return;
+        }
+        if (this.document && this.document.version !== this.sourceVersion) {
+            void this.reassembleForPanel(action.type);
+            return;
+        }
+        if (action.type === 'reset') {
+            this.sendAction(action);
+            return;
+        }
+        if (this.panelDebugStart) {
+            this.panelDebugStart.queued.push(action.type);
+            return;
+        }
+        const state = this.workerState;
+        if (this.debugSessions.size || !state?.loaded || state.stale || state.finished) {
+            this.sendAction(action);
+        } else if (state.running) {
+            this.sendAction(action);
+            if (action.type === 'run') {
+                void this.waitForState(next => next.sourceId !== state.sourceId ||
+                    (next.executionRevision !== state.executionRevision && !next.running))
+                    .then(next => { if (next.sourceId === state.sourceId) void this.startPanelDebug('attach'); })
+                    .catch(error => console.warn('MIPS Runner could not attach the debugger:', error));
+            }
+        } else {
+            void this.startPanelDebug(action.type);
+        }
     }
 
     workerError(message) {
@@ -294,6 +488,8 @@ class SimulatorView {
         const editor = preserveEditorFocus && vscode.window.activeTextEditor?.document === document
             ? vscode.window.activeTextEditor : undefined;
         this.executionLine = undefined;
+        this.sourceHighlights = [];
+        this.lastChangeLine = undefined;
         this.sourceVersion = undefined;
         this.updateDecorations();
         this.document = document;
@@ -315,7 +511,12 @@ class SimulatorView {
         } else if (message.type === 'reloadSource') {
             this.sendSource();
         } else if (message.type === 'simulatorAction' && message.action && typeof message.action.type === 'string') {
-            this.sendAction(message.action);
+            if (['run', 'step', 'reset'].includes(message.action.type)) this.onPanelExecution(message.action);
+            else {
+                this.sendAction(message.action);
+                if (message.action.type === 'selectRegister') this.highlightRegisterInSource(message.action.index);
+                if (message.action.type === 'selectMemory') this.highlightMemoryInSource(message.action.address);
+            }
         }
     }
 
@@ -337,6 +538,8 @@ class SimulatorView {
         this.workerState = undefined;
         this.pendingBreakpoints = undefined;
         this.executionLine = undefined;
+        this.sourceHighlights = [];
+        this.lastChangeLine = undefined;
         this.updateDecorations();
         const source = this.document.getText();
         this.worker.postMessage({
@@ -367,8 +570,6 @@ class SimulatorView {
     <header class="toolbar">
         <div class="program"><strong id="program-name">No program loaded</strong><span id="program-status" role="status">Open a MIPS file to begin.</span></div>
         <div class="actions">
-            <button id="load" type="button">Load active file</button>
-            <button id="assemble" type="button" disabled>Assemble</button>
             <button id="run" type="button" disabled>Run</button>
             <button id="step" type="button" disabled>Step</button>
             <button id="reset" type="button" disabled>Reset</button>
@@ -383,7 +584,7 @@ class SimulatorView {
             <g id="pointer-paths"></g>
         </svg>
         <section class="register-panel" aria-labelledby="register-title">
-            <div class="panel-title"><h2 id="register-title">Registers</h2><span>Select an address</span></div>
+            <div class="panel-title"><h2 id="register-title">Registers</h2><span>Last change</span></div>
             <label class="register-filter" for="register-filter">Show <select id="register-filter" aria-label="Filter registers"><option value="all">All registers</option><option value="source">Used in code</option><option value="executed">Accessed during execution</option></select></label>
             <div id="registers" class="registers" role="region" aria-label="Registers" tabindex="0"></div>
         </section>
@@ -393,13 +594,13 @@ class SimulatorView {
                 <section aria-labelledby="data-title">
                     <div class="section-title"><h3 id="data-title"><span class="region-dot data-dot"></span>Data segment</h3><span id="data-target"></span></div>
                     <form class="address-form" id="data-form"><label for="data-address">Address</label><input id="data-address" spellcheck="false" value="0x10010000"><button type="submit">Go</button></form>
-                    <div class="memory-head"><span>Address</span><span>Value</span></div>
+                    <div class="memory-head"><span>Address</span><span>Value</span><span>Last change</span></div>
                     <div id="data-rows"></div>
                 </section>
                 <section aria-labelledby="stack-title">
                     <div class="section-title"><h3 id="stack-title"><span class="region-dot stack-dot"></span>Stack</h3><button id="follow-stack" type="button">Follow $sp</button></div>
                     <form class="address-form" id="stack-form"><label for="stack-address">Address</label><input id="stack-address" spellcheck="false"><button type="submit">Go</button></form>
-                    <div class="memory-head"><span>Address</span><span>Value</span></div>
+                    <div class="memory-head"><span>Address</span><span>Value</span><span>Last change</span></div>
                     <div id="stack-rows"></div>
                     <p id="stack-warning" class="notice" hidden></p>
                 </section>
@@ -430,7 +631,9 @@ function activate(context) {
         vscode.window.onDidChangeTextEditorSelection(event => provider.onEditorSelectionChanged(event)),
         vscode.window.onDidChangeVisibleTextEditors(() => provider.updateDecorations()),
         vscode.workspace.onDidChangeTextDocument(event => provider.onDocumentChanged(event)),
-        vscode.debug.onDidChangeBreakpoints(() => provider.syncSourceBreakpoints())
+        vscode.debug.onDidChangeBreakpoints(() => provider.syncSourceBreakpoints()),
+        vscode.debug.onDidStartDebugSession(session => provider.onDebugSessionStarted(session)),
+        vscode.debug.onDidTerminateDebugSession(session => provider.onDebugSessionTerminated(session))
     );
     registerAutoOpen(context, provider);
     registerDebugger(context, provider);

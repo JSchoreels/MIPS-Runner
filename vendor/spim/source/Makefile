@@ -242,3 +242,4 @@ parser_yacc.o: $(CPU_DIR)/parser.h
 
 # Register access tracking is shared by the simulator and syscall runner.
 spim.o run.o syscall.o: $(CPU_DIR)/register-access.h
+spim.o mem.o syscall.o: $(CPU_DIR)/change-history.h

@@ -10,7 +10,7 @@ const REGISTER_NAMES = [
     't8', 't9', 'k0', 'k1', 'gp', 'sp', 'fp', 'ra'
 ];
 const elements = Object.fromEntries([
-    'program-name', 'program-status', 'load', 'assemble', 'run', 'step', 'reset',
+    'program-name', 'program-status', 'run', 'step', 'reset',
     'panels', 'registers', 'register-filter', 'pointer-links', 'pointer-paths', 'pointer-trace',
     'data-target', 'data-form', 'data-address', 'data-rows',
     'stack-form', 'stack-address', 'stack-rows', 'stack-warning', 'follow-stack',
@@ -27,17 +27,39 @@ const isStackAddress = (address, stack) => state.stackSafe && address >= STACK_T
 const action = (type, fields = {}) => vscode.postMessage({ type: 'simulatorAction', action: { type, ...fields } });
 
 function updateButtons() {
-    const runnable = state.ready && state.loaded && !state.stale && !state.finished;
-    elements.assemble.disabled = !state.ready || !state.sourceAvailable || state.running;
+    const runnable = state.ready && ((state.loaded && !state.stale && !state.finished) ||
+        (state.sourceAvailable && state.stale && !state.running));
     elements.run.disabled = !runnable;
     elements.run.textContent = state.running ? 'Pause' : 'Run';
     elements.step.disabled = !runnable || state.running;
-    elements.reset.disabled = !state.ready || !state.sourceAvailable || state.stale || state.running;
+    elements.reset.disabled = !state.ready || !state.sourceAvailable || state.running;
 }
 
 function changedAt(previousRows, row) {
     const old = previousRows?.find(item => item.address === row.address);
     return old && old.value !== row.value;
+}
+
+function lastChangeElement(change, address) {
+    const link = address !== undefined && Number.isInteger(change?.sourceLine);
+    const element = document.createElement(link ? 'button' : 'span');
+    element.className = 'last-change';
+    if (!change) {
+        element.textContent = '—';
+        element.title = 'No change since assembly';
+    } else if (Number.isInteger(change.sourceLine)) {
+        element.textContent = `L${change.sourceLine + 1}`;
+        element.title = `Last changed at line ${change.sourceLine + 1}: ${change.sourceText || hex(change.address)}`;
+        if (link) {
+            element.type = 'button';
+            element.dataset.selectMemory = String(address);
+            element.setAttribute('aria-label', `${element.title}. Show in source.`);
+        }
+    } else {
+        element.textContent = hex(change.address);
+        element.title = `Last changed by instruction at ${hex(change.address)}; source line unavailable`;
+    }
+    return element;
 }
 
 function renderRegisters(snapshot) {
@@ -49,17 +71,17 @@ function renderRegisters(snapshot) {
     snapshot.registers.forEach((value, index) => {
         if (visible && !visible.has(index)) return;
         const navigable = isDataAddress(value, snapshot.data) || isStackAddress(value, snapshot.stack);
-        const row = document.createElement(navigable ? 'button' : 'div');
+        const row = document.createElement('button');
+        row.type = 'button';
         row.className = 'register-row';
         row.dataset.registerIndex = String(index);
+        row.dataset.register = String(index);
         if (state.previous && state.previous.registers[index] !== value) row.classList.add('changed');
         if (state.selectedRegister === index) row.classList.add('selected-pointer');
-        if (navigable) {
-            row.type = 'button';
-            row.dataset.register = String(index);
-            row.setAttribute('aria-label', `Follow the possible address in $${REGISTER_NAMES[index]}: ${hex(value)}`);
-            row.setAttribute('aria-pressed', String(state.selectedRegister === index));
-        }
+        row.setAttribute('aria-label', navigable
+            ? `Highlight $${REGISTER_NAMES[index]} in source and follow its possible address: ${hex(value)}`
+            : `Highlight $${REGISTER_NAMES[index]} in source: ${hex(value)}`);
+        row.setAttribute('aria-pressed', String(state.selectedRegister === index));
         const name = document.createElement('span');
         name.className = 'register-name';
         name.textContent = '$' + REGISTER_NAMES[index];
@@ -72,7 +94,9 @@ function renderRegisters(snapshot) {
         decimal.className = 'decimal';
         decimal.textContent = ` (${value | 0})`;
         combinedValue.append(displayedValue, decimal);
-        row.append(name, combinedValue);
+        const change = lastChangeElement(snapshot.registerChanges?.[index]);
+        row.title = change.title;
+        row.append(name, combinedValue, change);
         fragment.append(row);
     });
     if (!fragment.hasChildNodes()) {
@@ -104,9 +128,14 @@ function renderMemory(container, rows, previousRows, segment, snapshot) {
         else if (pathIndex > 0) line.classList.add('linked-target');
         else if (segment === 'stack' && !path.length && aligned(snapshot.registers[29]) === row.address) line.classList.add('stack-top');
         if (changedAt(previousRows, row)) line.classList.add('changed');
-        const address = document.createElement('span');
+        const address = document.createElement(row.value === undefined ? 'span' : 'button');
         address.className = 'address';
         address.textContent = row.address <= 0xffffffff ? hex(row.address) : '—';
+        if (row.value !== undefined) {
+            address.type = 'button';
+            address.dataset.selectMemory = String(row.address);
+            address.setAttribute('aria-label', `Select memory at ${hex(row.address)} and highlight its source`);
+        }
         const pointer = row.value !== undefined && (isDataAddress(row.value, snapshot.data) || isStackAddress(row.value, snapshot.stack));
         const value = document.createElement(pointer ? 'button' : 'span');
         if (pointer) {
@@ -126,7 +155,7 @@ function renderMemory(container, rows, previousRows, segment, snapshot) {
             decimal.textContent = ` (${row.value | 0})`;
             combinedValue.append(decimal);
         }
-        line.append(address, combinedValue);
+        line.append(address, combinedValue, lastChangeElement(row.lastChange, row.value === undefined ? undefined : row.address));
         fragment.append(line);
     });
     container.replaceChildren(fragment);
@@ -266,8 +295,6 @@ function render() {
     schedulePointerLinks();
 }
 
-elements.load.addEventListener('click', () => vscode.postMessage({ type: 'loadActiveFile' }));
-elements.assemble.addEventListener('click', () => vscode.postMessage({ type: 'reloadSource' }));
 elements.run.addEventListener('click', () => action('run'));
 elements.step.addEventListener('click', () => action('step'));
 elements.reset.addEventListener('click', () => action('reset'));

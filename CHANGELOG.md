@@ -1,5 +1,19 @@
 # Historique des versions
 
+## 0.0.11
+
+**User facing changes**
+
+- Découvrez l'exécution pas à pas et le suivi des pointeurs dans deux animations sur la page de l'extension.
+- Les commandes **Run** et **Step** de MIPS Runner activent le débogueur VS Code pour rendre les registres disponibles dans **Watch** pendant les pauses.
+- Le fichier MIPS actif est chargé automatiquement par défaut. **Run**, **Step** et **Reset** assemblent les modifications de l'éditeur à la demande ; les boutons de chargement et d'assemblage disparaissent du panneau.
+- Retrouvez pour chaque registre et mot mémoire la dernière ligne ayant changé sa valeur. Cliquer sur un registre ou une adresse mémoire met en évidence ses références et sa dernière modification dans l'éditeur.
+
+**Technical details**
+
+- La session de débogage reprend l'état déjà chargé lorsque le code n'a pas changé ; après une modification, elle redémarre sur la version courante et conserve les points d'arrêt. L'historique reflète les changements réels et est effacé à chaque assemblage.
+- Les animations montrent la vue MIPS Runner et le simulateur SPIM avec un aperçu dédié du code source.
+
 ## 0.0.10
 
 Cette version regroupe les nouveautés depuis la version 0.0.3 du Marketplace.

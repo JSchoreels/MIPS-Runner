@@ -9,7 +9,7 @@ function registerAutoOpen(context, provider) {
     async function consider(editor) {
         const document = editor?.document;
         if (!document || document.isClosed || document.languageId !== 'mips' || provider.isDocumentLoaded(document)) return;
-        const behavior = vscode.workspace.getConfiguration('mipsRunner', document.uri).get('openBehavior', 'ask');
+        const behavior = vscode.workspace.getConfiguration('mipsRunner', document.uri).get('openBehavior', 'auto');
         if (behavior === 'auto') {
             await provider.loadDocument(document, true);
             return;
