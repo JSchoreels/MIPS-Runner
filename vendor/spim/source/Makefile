@@ -79,7 +79,7 @@ CXXFLAGS += -I. -I$(CPU_DIR) $(DEFINES) -O2 -Wall -pedantic -Wextra -Wunused -Wn
 LDFLAGS += -lm -O2 --bind\
 			--preload-file $(CPU_DIR)/exceptions.s@/usr/share/spim/exceptions.s\
 			-s ENVIRONMENT=web \
-			-s EXTRA_EXPORTED_RUNTIME_METHODS="['ccall', 'cwrap']"
+			-s EXPORTED_RUNTIME_METHODS="['ccall', 'cwrap']"
 
 # lex.yy.cpp is usually compiled with -O to speed it up.
 
@@ -92,8 +92,6 @@ OBJS = spim.o spim-utils.o run.o mem.o inst.o data.o sym-tbl.o parser_yacc.o lex
 
 spim:   $(OBJS)
 	$(CXX) $(OBJS) $(LDFLAGS) -o wasm.js
-	sed -i '' 's/throw"getitimer() is not implemented yet"//g' wasm.js
-	sed -i '' 's/throw"setitimer() is not implemented yet"//g' wasm.js
 	mv wasm.* ../
 
 #
@@ -241,3 +239,6 @@ parser_yacc.o: $(CPU_DIR)/sym-tbl.h
 parser_yacc.o: $(CPU_DIR)/data.h
 parser_yacc.o: $(CPU_DIR)/scanner.h
 parser_yacc.o: $(CPU_DIR)/parser.h
+
+# Register access tracking is shared by the simulator and syscall runner.
+spim.o run.o syscall.o: $(CPU_DIR)/register-access.h

@@ -2,7 +2,7 @@
   "name": "mips-runner",
   "displayName": "MIPS Runner",
   "description": "Run and inspect MIPS assembly with the SPIM simulator inside VS Code.",
-  "version": "0.0.3",
+  "version": "0.0.10",
   "publisher": "Jisko",
   "license": "UNLICENSED",
   "repository": {
@@ -17,9 +17,31 @@
   "activationEvents": [
     "onLanguage:mips",
     "onCommand:mipsRunner.loadActiveFile",
-    "onView:mipsRunner.simulator"
+    "onView:mipsRunner.simulator",
+    "onDebugInitialConfigurations",
+    "onDebugResolve:mips-runner"
   ],
   "contributes": {
+    "breakpoints": [{ "language": "mips" }],
+    "debuggers": [
+      {
+        "type": "mips-runner",
+        "label": "MIPS Runner",
+        "languages": ["mips"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": { "type": "string", "default": "${file}", "description": "MIPS source file to debug." },
+              "stopOnEntry": { "type": "boolean", "default": false, "description": "Pause at the first instruction." }
+            }
+          }
+        },
+        "initialConfigurations": [
+          { "type": "mips-runner", "request": "launch", "name": "Debug MIPS", "program": "${file}" }
+        ]
+      }
+    ],
     "configuration": {
       "title": "MIPS Runner",
       "properties": {
@@ -82,13 +104,20 @@
         {
           "id": "mipsRunner.simulator",
           "type": "webview",
-          "name": "Simulator"
+          "name": "Simulator",
+          "contextualTitle": "MIPS Runner",
+          "icon": "media/icon.svg"
         }
       ]
     }
   },
   "scripts": {
     "check:extension": "node --check src/extension.js",
-    "check:runner": "node --check media/runner.js"
+    "check:runner": "node --check media/runner.js",
+    "check:worker": "node --check src/simulator-worker.js",
+    "check:symbol-source": "node --check src/source-symbols.js",
+    "check:symbol-worker": "node --check src/symbol-worker.js",
+    "check:registers": "node --check src/registers.js",
+    "check:debug": "node --check src/debug-adapter.js"
   }
 }

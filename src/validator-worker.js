@@ -4,13 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { parentPort, workerData } = require('worker_threads');
+const { performance } = require('perf_hooks');
 
 const runtime = path.join(__dirname, '..', 'vendor', 'spim');
 const data = fs.readFileSync(path.join(runtime, 'wasm.data'));
 const log = [];
 const context = {
     ArrayBuffer, DataView, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array,
-    Uint8Array, Uint16Array, Uint32Array, WebAssembly, TextDecoder, TextEncoder,
+    Uint8Array, Uint16Array, Uint32Array, WebAssembly, TextDecoder, TextEncoder, performance,
     setTimeout, clearTimeout,
     location: { pathname: '/validator' },
     document: { currentScript: null },

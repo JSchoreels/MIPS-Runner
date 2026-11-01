@@ -42,6 +42,7 @@
 #include "spim-utils.h"
 #include "inst.h"
 #include "reg.h"
+#include "register-access.h"
 #include "mem.h"
 #include "data.h"
 #include "version.h"
@@ -71,7 +72,10 @@ void init() {
 }
 
 
+unsigned int register_access_masks[2] = {0, 0};
+
 int step(int step_size, bool cont_bkpt) {
+  register_access_masks[0] = register_access_masks[1] = 0;
   mem_addr addr = PC == 0 ? starting_address() : PC;
   if (step_size == 0) step_size = DEFAULT_RUN_STEPS;
 
@@ -109,6 +113,7 @@ val getStack() { return val(typed_memory_view(STACK_LIMIT / 16, (unsigned int *)
 val getUserData() { return val(typed_memory_view(data_top - DATA_BOT, (unsigned int *) data_seg)); }
 val getKernelData() { return val(typed_memory_view(k_data_top - K_DATA_BOT, (unsigned int *) k_data_seg)); }
 val getGeneralRegVals() { return val(typed_memory_view(32, (unsigned int *) R)); }
+val getRegisterAccesses() { return val(typed_memory_view(2, register_access_masks)); }
 val getFloatRegVals() { return val(typed_memory_view(32, (float *) FPR)); }
 val getDoubleRegVals() { return val(typed_memory_view(16, (double *) FPR)); }
 
@@ -138,6 +143,7 @@ EMSCRIPTEN_BINDINGS(getStack) { function("getStack", &getStack); }
 EMSCRIPTEN_BINDINGS(getUserData) { function("getUserData", &getUserData); }
 EMSCRIPTEN_BINDINGS(getKernelData) { function("getKernelData", &getKernelData); }
 EMSCRIPTEN_BINDINGS(getGeneralRegVals) { function("getGeneralRegVals", &getGeneralRegVals); }
+EMSCRIPTEN_BINDINGS(getRegisterAccesses) { function("getRegisterAccesses", &getRegisterAccesses); }
 EMSCRIPTEN_BINDINGS(getFloatRegVals) { function("getFloatRegVals", &getFloatRegVals); }
 EMSCRIPTEN_BINDINGS(getDoubleRegVals) { function("getDoubleRegVals", &getDoubleRegVals); }
 EMSCRIPTEN_BINDINGS(getSpecialRegVals) { function("getSpecialRegVals", &getSpecialRegVals); }

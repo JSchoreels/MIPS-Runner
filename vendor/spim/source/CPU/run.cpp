@@ -61,6 +61,10 @@
 #include "parser_yacc.h"
 #include "syscall.h"
 #include "run.h"
+#include "register-access.h"
+
+static TrackedRegisters tracked_registers;
+#define R tracked_registers
 
 bool force_break = false;	/* For the execution env. to force an execution break */
 
@@ -233,7 +237,7 @@ run_spim (mem_addr initial_PC, int steps_to_run, bool display)
               return true;
 	    }
 
-	  R[0] = 0;		/* Maintain invariant value */
+	  tracked_registers.untracked(0) = 0;		/* Maintain invariant value */
 
 #ifdef _WIN32
 	  SleepEx(0, TRUE);	      /* Put thread in awaitable state for WaitableTimer */

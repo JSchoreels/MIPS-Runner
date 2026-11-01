@@ -51,6 +51,7 @@
 #include "mem.h"
 #include "sym-tbl.h"
 #include "syscall.h"
+#include "register-access.h"
 
 
 #ifdef _WIN32
@@ -103,6 +104,9 @@ void windowsParameterHandlingControl(int flag )
 #endif
 
 
+static TrackedRegisters tracked_registers;
+#define R tracked_registers
+
 /* Decides which syscall to execute or simulate.  Returns zero upon
    exit syscall and non-zero to continue execution. */
 
@@ -120,7 +124,7 @@ do_syscall ()
   switch (R[REG_V0])
     {
     case PRINT_INT_SYSCALL:
-      write_output (console_out, "%d", R[REG_A0]);
+      write_output (console_out, "%d", static_cast<reg_word>(R[REG_A0]));
       break;
 
     case PRINT_FLOAT_SYSCALL:
@@ -183,7 +187,7 @@ do_syscall ()
       }
 
     case PRINT_CHARACTER_SYSCALL:
-      write_output (console_out, "%c", R[REG_A0]);
+      write_output (console_out, "%c", static_cast<reg_word>(R[REG_A0]));
       break;
 
     case READ_CHARACTER_SYSCALL:
@@ -250,7 +254,7 @@ do_syscall ()
       }
 
     default:
-      run_error ("Unknown system call: %d\n", R[REG_V0]);
+      run_error ("Unknown system call: %d\n", static_cast<reg_word>(R[REG_V0]));
       break;
     }
 
